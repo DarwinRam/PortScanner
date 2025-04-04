@@ -10,6 +10,11 @@ This is a high-performance, concurrent TCP port scanner written in Go. It allows
 
 ### ** Clone the Repository**
 
+### packages
+```For color package from github use in terminal:
+go get github.com/fatih/color
+```
+
 
 ### **  Run the Scanner**
 #### Scan default ports (1–1024) on localhost
