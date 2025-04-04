@@ -43,13 +43,14 @@ func main() {
 	startPort := flag.Int("start-port", 1, "Starting port range")
 	endPort := flag.Int("end-port", 1024, "Ending port range")
 	workers := flag.Int("workers", 100, "Number of concurrent workers")
+	timeout := flag.Int("timeout", 5, "Connection timeout in seconds")
 	flag.Parse()
 
 	startTime := time.Now()
 	var wg sync.WaitGroup
 	tasks := make(chan string, 100)
 	dialer := net.Dialer{
-		Timeout: 5 * time.Second,
+		Timeout: time.Duration(*timeout) * time.Second,
 	}
 
 	for i := 1; i <= *workers; i++ {
