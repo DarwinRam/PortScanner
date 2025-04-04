@@ -1,3 +1,6 @@
+// Filename: main.go
+// Purpose: This program demonstrates how to create a TCP network connection using Go with -target, -targets, -start-port, -end-port, -workers, and -timeout flags. It also performs banner grabbing and shows progress.
+
 package main
 
 import (
@@ -5,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -56,31 +60,48 @@ func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer, totalPorts
 }
 
 func main() {
-	target := flag.String("target", "scanme.nmap.org", "Target IP address or hostname")
+	target := flag.String("target", "", "Single target IP address or hostname")
+	targets := flag.String("targets", "scanme.nmap.org", "Comma-separated list of target IP addresses or hostnames")
 	startPort := flag.Int("start-port", 1, "Starting port range")
-	endPort := flag.Int("end-port", 1024, "Ending port range")
-	workers := flag.Int("workers", 100, "Number of concurrent workers")
+	endPort := flag.Int("end-port", 22, "Ending port range")
+	workers := flag.Int("workers", 200, "Number of concurrent workers")
 	timeout := flag.Int("timeout", 5, "Connection timeout in seconds")
 	flag.Parse()
 
+	// Use the single target if provided, otherwise fall back to the targets list
+	var targetList []string
+	if *target != "" {
+		targetList = append(targetList, *target)
+	} else {
+		targetList = strings.Split(*targets, ",")
+	}
+
+	if len(targetList) == 0 {
+		fmt.Println("Error: No target specified. Use -target or -targets.")
+		return
+	}
+
+	totalPorts := (*endPort - *startPort + 1) * len(targetList)
 	startTime := time.Now()
+
 	var wg sync.WaitGroup
 	tasks := make(chan string, 100)
 	dialer := net.Dialer{
 		Timeout: time.Duration(*timeout) * time.Second,
 	}
 
-	totalPorts := *endPort - *startPort + 1
-
 	for i := 1; i <= *workers; i++ {
 		wg.Add(1)
 		go worker(&wg, tasks, dialer, totalPorts)
 	}
 
-	for p := *startPort; p <= *endPort; p++ {
-		port := strconv.Itoa(p)
-		address := net.JoinHostPort(*target, port)
-		tasks <- address
+	for _, target := range targetList {
+		target = strings.TrimSpace(target)
+		for p := *startPort; p <= *endPort; p++ {
+			port := strconv.Itoa(p)
+			address := net.JoinHostPort(target, port)
+			tasks <- address
+		}
 	}
 	close(tasks)
 	wg.Wait()
