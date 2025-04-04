@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+var openPorts int
+var mu sync.Mutex
+
 func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer) {
 	defer wg.Done()
 	maxRetries := 3
@@ -19,6 +22,9 @@ func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer) {
 			if err == nil {
 				conn.Close()
 				fmt.Printf("Connection to %s was successful\n", addr)
+				mu.Lock()
+				openPorts++
+				mu.Unlock()
 				success = true
 				break
 			}
@@ -39,6 +45,7 @@ func main() {
 	workers := flag.Int("workers", 100, "Number of concurrent workers")
 	flag.Parse()
 
+	startTime := time.Now()
 	var wg sync.WaitGroup
 	tasks := make(chan string, 100)
 	dialer := net.Dialer{
@@ -50,11 +57,19 @@ func main() {
 		go worker(&wg, tasks, dialer)
 	}
 
+	totalPorts := 0
 	for p := *startPort; p <= *endPort; p++ {
 		port := strconv.Itoa(p)
 		address := net.JoinHostPort(*target, port)
 		tasks <- address
+		totalPorts++
 	}
 	close(tasks)
 	wg.Wait()
+
+	duration := time.Since(startTime)
+	fmt.Println("\n--- Scan Summary ---")
+	fmt.Printf("Total ports scanned: %d\n", totalPorts)
+	fmt.Printf("Number of open ports: %d\n", openPorts)
+	fmt.Printf("Time taken: %v\n", duration)
 }
