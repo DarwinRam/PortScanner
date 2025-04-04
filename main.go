@@ -1,9 +1,7 @@
-// Filename: main.go
-// Purpose: This program demonstrates how to create a TCP network connection using Go with -target, -targets, -start-port, -end-port, -workers, and -timeout flags. It also performs banner grabbing and shows progress.
-
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
@@ -13,102 +11,171 @@ import (
 	"time"
 )
 
-var openPorts int
-var mu sync.Mutex
-var progressCounter int
+// PortScanResult stores information about an open port
+// It includes the target IP/hostname, port number, status, and optional banner response
 
-func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer, totalPorts int) {
+type PortScanResult struct {
+	Target string `json:"target"`
+	Port   int    `json:"port"`
+	Status string `json:"status"`
+	Banner string `json:"banner"`
+}
+
+func (p PortScanResult) MarshalJSON() ([]byte, error) {
+	if p.Banner == "" {
+		p.Banner = "No banner"
+	}
+	type Alias PortScanResult
+	return json.Marshal((Alias)(p))
+}
+
+// worker handles scanning tasks concurrently
+// It attempts to connect to a given address and optionally grabs the service banner
+func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer, openPorts *[]PortScanResult, mu *sync.Mutex, totalPorts, scanned *int) {
 	defer wg.Done()
-	maxRetries := 3
-	for addr := range tasks {
-		mu.Lock()
-		progressCounter++
-		fmt.Printf("Scanning port %d/%d: %s\n", progressCounter, totalPorts, addr)
-		mu.Unlock()
+	maxRetries := 1
 
+	for addr := range tasks {
 		var success bool
-		for i := range maxRetries {
+		var banner string
+		parts := strings.Split(addr, ":") // Split address into target and port
+		port, _ := strconv.Atoi(parts[1])
+		target := parts[0]
+
+		for i := 0; i < maxRetries; i++ {
 			conn, err := dialer.Dial("tcp", addr)
 			if err == nil {
-				fmt.Printf("Connection to %s was successful\n", addr)
-				mu.Lock()
-				openPorts++
-				mu.Unlock()
-				success = true
-
-				// Attempt to grab banner
+				// Set timeout for banner grabbing
 				conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 				buffer := make([]byte, 1024)
 				n, err := conn.Read(buffer)
-				if err == nil && n > 0 {
-					fmt.Printf("Banner from %s: %s\n", addr, string(buffer[:n]))
+				if err != nil {
+					fmt.Printf("Error reading from %s:%d: %v\n", target, port, err)
+					banner = ""
+				}
+				if n > 0 {
+					banner = strings.TrimSpace(string(buffer[:n]))
+					fmt.Printf(`Response from %s: %s\n`, addr, banner)
 				} else {
-					fmt.Printf("No banner received from %s\n", addr)
+					fmt.Printf(`NO response from %s, bytes read: %d\n`, addr, n)
 				}
 				conn.Close()
 
+				// Store successful scan result
+				mu.Lock()
+				*openPorts = append(*openPorts, PortScanResult{Target: target, Port: port, Status: "open", Banner: banner})
+				mu.Unlock()
+
+				fmt.Printf("\r[OPEN] %s:%d %s\n", target, port, banner)
+				success = true
 				break
 			}
+
+			// Apply exponential backoff before retrying
 			backoff := time.Duration(1<<i) * time.Second
-			fmt.Printf("Attempt %d to %s failed. Waiting %v...\n", i+1, addr, backoff)
 			time.Sleep(backoff)
 		}
+
 		if !success {
-			fmt.Printf("Failed to connect to %s after %d attempts\n", addr, maxRetries)
+			fmt.Printf("\r[CLOSED] %s:%d\n", target, port)
 		}
+
+		// Update progress counter
+		mu.Lock()
+		*scanned++
+		fmt.Printf("\rScanning port %d/%d...", *scanned, *totalPorts)
+		mu.Unlock()
 	}
 }
 
 func main() {
-	target := flag.String("target", "", "Single target IP address or hostname")
-	targets := flag.String("targets", "scanme.nmap.org", "Comma-separated list of target IP addresses or hostnames")
-	startPort := flag.Int("start-port", 1, "Starting port range")
-	endPort := flag.Int("end-port", 22, "Ending port range")
-	workers := flag.Int("workers", 200, "Number of concurrent workers")
+	// Command-line flags for user input
+	target := flag.String("target", "", "Specify a single target IP or hostname")
+	targets := flag.String("targets", "", "Comma-separated list of target IPs or hostnames")
+	startPort := flag.Int("start-port", 1, "Starting port number")
+	endPort := flag.Int("end-port", 22, "Ending port number")
+	workers := flag.Int("workers", 100, "Number of concurrent workers")
 	timeout := flag.Int("timeout", 5, "Connection timeout in seconds")
+	jsonOutput := flag.Bool("json", false, "Output results in JSON format")
+	portsList := flag.String("ports", "", "Comma-separated list of specific ports to scan (e.g., 22,80,443)")
+
 	flag.Parse()
 
-	// Use the single target if provided, otherwise fall back to the targets list
+	// Determine target list based on user input
 	var targetList []string
-	if *target != "" {
+	if *targets != "" {
+		targetList = strings.Split(*targets, ",")
+	} else if *target != "" {
 		targetList = append(targetList, *target)
 	} else {
-		targetList = strings.Split(*targets, ",")
-	}
-
-	if len(targetList) == 0 {
-		fmt.Println("Error: No target specified. Use -target or -targets.")
+		fmt.Println("Error: No target specified. Use -target or -targets flag.")
 		return
 	}
 
-	totalPorts := (*endPort - *startPort + 1) * len(targetList)
-	startTime := time.Now()
-
-	var wg sync.WaitGroup
-	tasks := make(chan string, 100)
-	dialer := net.Dialer{
-		Timeout: time.Duration(*timeout) * time.Second,
+	// Parse specific ports (if provided)
+	portSet := make(map[int]bool)
+	for p := *startPort; p <= *endPort; p++ {
+		portSet[p] = true
 	}
-
-	for i := 1; i <= *workers; i++ {
-		wg.Add(1)
-		go worker(&wg, tasks, dialer, totalPorts)
-	}
-
-	for _, target := range targetList {
-		target = strings.TrimSpace(target)
-		for p := *startPort; p <= *endPort; p++ {
-			port := strconv.Itoa(p)
-			address := net.JoinHostPort(target, port)
-			tasks <- address
+	if *portsList != "" {
+		for _, p := range strings.Split(*portsList, ",") {
+			port, err := strconv.Atoi(strings.TrimSpace(p))
+			if err == nil {
+				portSet[port] = true
+			}
 		}
 	}
-	close(tasks)
-	wg.Wait()
+	var portRange []int
+	for port := range portSet {
+		portRange = append(portRange, port)
+	}
 
+	// Initialize scanning process
+	startTime := time.Now()
+	var wg sync.WaitGroup
+	tasks := make(chan string, len(targetList)*len(portRange))
+	var openPorts []PortScanResult
+	var mu sync.Mutex
+	dialer := net.Dialer{Timeout: time.Duration(*timeout) * time.Second}
+
+	totalPorts := len(targetList) * len(portRange)
+	scanned := 0
+
+	// Launch worker goroutines for concurrent scanning
+	for i := 0; i < *workers; i++ {
+		wg.Add(1)
+		go worker(&wg, tasks, dialer, &openPorts, &mu, &totalPorts, &scanned)
+	}
+
+	// Queue scan tasks for each target and port combination
+	for _, target := range targetList {
+		for _, port := range portRange {
+			tasks <- net.JoinHostPort(target, strconv.Itoa(port))
+		}
+	}
+
+	close(tasks) // Close task channel to signal workers that no more tasks are coming
+	wg.Wait()    // Wait for all workers to finish
+
+	// Compute scan duration
 	duration := time.Since(startTime)
-	fmt.Println("\n--- Scan Summary ---")
-	fmt.Printf("Total ports scanned: %d\n", totalPorts)
-	fmt.Printf("Number of open ports: %d\n", openPorts)
-	fmt.Printf("Time taken: %v\n", duration)
+	fmt.Println("\n=== Scan Summary ===")
+	fmt.Printf("Targets Scanned: %d\n", len(targetList))
+	fmt.Printf("Ports Scanned: %d\n", totalPorts)
+	fmt.Printf("Open Ports: %d\n", len(openPorts))
+	fmt.Printf("Scan Duration: %v\n", duration)
+
+	// Output results in JSON format if requested
+	if *jsonOutput {
+		jsonData, err := json.MarshalIndent(openPorts, "", "  ")
+		if err != nil {
+			fmt.Println("Error generating JSON output")
+		} else {
+			if len(openPorts) == 0 {
+				fmt.Println("[]") // Print empty JSON array if no open ports found
+			} else {
+				fmt.Println(string(jsonData))
+			}
+		}
+	}
 }
