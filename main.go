@@ -11,11 +11,17 @@ import (
 
 var openPorts int
 var mu sync.Mutex
+var progressCounter int
 
-func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer) {
+func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer, totalPorts int) {
 	defer wg.Done()
 	maxRetries := 3
 	for addr := range tasks {
+		mu.Lock()
+		progressCounter++
+		fmt.Printf("Scanning port %d/%d: %s\n", progressCounter, totalPorts, addr)
+		mu.Unlock()
+
 		var success bool
 		for i := range maxRetries {
 			conn, err := dialer.Dial("tcp", addr)
@@ -64,17 +70,17 @@ func main() {
 		Timeout: time.Duration(*timeout) * time.Second,
 	}
 
+	totalPorts := *endPort - *startPort + 1
+
 	for i := 1; i <= *workers; i++ {
 		wg.Add(1)
-		go worker(&wg, tasks, dialer)
+		go worker(&wg, tasks, dialer, totalPorts)
 	}
 
-	totalPorts := 0
 	for p := *startPort; p <= *endPort; p++ {
 		port := strconv.Itoa(p)
 		address := net.JoinHostPort(*target, port)
 		tasks <- address
-		totalPorts++
 	}
 	close(tasks)
 	wg.Wait()
