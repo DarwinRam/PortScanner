@@ -35,7 +35,7 @@ func (p PortScanResult) MarshalJSON() ([]byte, error) {
 // It attempts to connect to a given address and optionally grabs the service banner
 func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer, openPorts *[]PortScanResult, mu *sync.Mutex, totalPorts, scanned *int) {
 	defer wg.Done()
-	maxRetries := 1
+	maxRetries := 3
 
 	green := color.New(color.FgGreen).SprintFunc()
 	red := color.New(color.FgRed).SprintFunc()
@@ -87,7 +87,7 @@ func main() {
 	target := flag.String("target", "", "Specify a single target IP or hostname")
 	targets := flag.String("targets", "", "Comma-separated list of target IPs or hostnames")
 	startPort := flag.Int("start-port", 1, "Starting port number")
-	endPort := flag.Int("end-port", 22, "Ending port number")
+	endPort := flag.Int("end-port", 1024, "Ending port number")
 	workers := flag.Int("workers", 100, "Number of concurrent workers")
 	timeout := flag.Int("timeout", 5, "Connection timeout in seconds")
 	jsonOutput := flag.Bool("json", false, "Output results in JSON format")
