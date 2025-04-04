@@ -11,7 +11,7 @@ import (
 
 func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer) {
 	defer wg.Done()
-	maxRetries := 1
+	maxRetries := 3
 	for addr := range tasks {
 		var success bool
 		for i := range maxRetries {
@@ -34,6 +34,8 @@ func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer) {
 
 func main() {
 	target := flag.String("target", "scanme.nmap.org", "Target IP address or hostname")
+	startPort := flag.Int("start-port", 1, "Starting port range")
+	endPort := flag.Int("end-port", 1024, "Ending port range")
 	flag.Parse()
 
 	var wg sync.WaitGroup
@@ -48,8 +50,7 @@ func main() {
 		go worker(&wg, tasks, dialer)
 	}
 
-	ports := 10
-	for p := 1; p <= ports; p++ {
+	for p := *startPort; p <= *endPort; p++ {
 		port := strconv.Itoa(p)
 		address := net.JoinHostPort(*target, port)
 		tasks <- address
