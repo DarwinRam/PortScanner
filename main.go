@@ -20,12 +20,23 @@ func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer) {
 		for i := range maxRetries {
 			conn, err := dialer.Dial("tcp", addr)
 			if err == nil {
-				conn.Close()
 				fmt.Printf("Connection to %s was successful\n", addr)
 				mu.Lock()
 				openPorts++
 				mu.Unlock()
 				success = true
+
+				// Attempt to grab banner
+				conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+				buffer := make([]byte, 1024)
+				n, err := conn.Read(buffer)
+				if err == nil && n > 0 {
+					fmt.Printf("Banner from %s: %s\n", addr, string(buffer[:n]))
+				} else {
+					fmt.Printf("No banner received from %s\n", addr)
+				}
+				conn.Close()
+
 				break
 			}
 			backoff := time.Duration(1<<i) * time.Second
