@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/fatih/color"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"os"
-"github.com/fatih/color"
-
 )
 
 // PortScanResult stores information about an open port
@@ -77,12 +76,11 @@ func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer, openPorts 
 
 		// Update scanning progress
 		mu.Lock()
-*scanned++
-fmt.Fprintf(os.Stdout, "\r%s Scanning port %d/%d...", cyan("[*]"), *scanned, *totalPorts)
-mu.Unlock()
+		*scanned++
+		fmt.Fprintf(os.Stdout, "\r%s Scanning port %d/%d...", cyan("[*]"), *scanned, *totalPorts)
+		mu.Unlock()
 	}
 }
-
 
 func main() {
 	// Command-line flags for user input
@@ -99,27 +97,26 @@ func main() {
 
 	// Determine target list based on user input
 	// Determine target list based on user input
-var targetList []string
+	var targetList []string
 
-if *target != "" {
-    targetList = append(targetList, *target)
-}
+	if *target != "" {
+		targetList = append(targetList, *target)
+	}
 
-if *targets != "" {
-    additionalTargets := strings.Split(*targets, ",")
-    for _, t := range additionalTargets {
-        trimmed := strings.TrimSpace(t)
-        if trimmed != "" {
-            targetList = append(targetList, trimmed)
-        }
-    }
-}
+	if *targets != "" {
+		additionalTargets := strings.Split(*targets, ",")
+		for _, t := range additionalTargets {
+			trimmed := strings.TrimSpace(t)
+			if trimmed != "" {
+				targetList = append(targetList, trimmed)
+			}
+		}
+	}
 
-if len(targetList) == 0 {
-    fmt.Println("Error: No targets specified. Use -target or -targets flag.")
-    return
-}
-
+	if len(targetList) == 0 {
+		fmt.Println("Error: No targets specified. Use -target or -targets flag.")
+		return
+	}
 
 	// Parse specific ports (if provided)
 	portSet := make(map[int]bool)
@@ -169,11 +166,10 @@ if len(targetList) == 0 {
 	// Compute scan duration
 	duration := time.Since(startTime)
 	fmt.Println("\n\n=== Scan Summary ===")
-fmt.Printf("Targets Scanned: %d\n", len(targetList))
-fmt.Printf("Ports Scanned: %d\n", totalPorts)
-fmt.Printf("Open Ports Found: %d\n", len(openPorts))
-fmt.Printf("Total Duration: %v\n", duration)
-
+	fmt.Printf("Targets Scanned: %d\n", len(targetList))
+	fmt.Printf("Ports Scanned: %d\n", totalPorts)
+	fmt.Printf("Open Ports Found: %d\n", len(openPorts))
+	fmt.Printf("Total Duration: %v\n", duration)
 
 	// Output results in JSON format if requested
 	if *jsonOutput {
