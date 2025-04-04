@@ -9,6 +9,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"os"
+"github.com/fatih/color"
+
 )
 
 // PortScanResult stores information about an open port
@@ -35,58 +38,51 @@ func worker(wg *sync.WaitGroup, tasks chan string, dialer net.Dialer, openPorts 
 	defer wg.Done()
 	maxRetries := 1
 
+	green := color.New(color.FgGreen).SprintFunc()
+	red := color.New(color.FgRed).SprintFunc()
+	cyan := color.New(color.FgCyan).SprintFunc()
+
 	for addr := range tasks {
 		var success bool
 		var banner string
-		parts := strings.Split(addr, ":") // Split address into target and port
+		parts := strings.Split(addr, ":")
 		port, _ := strconv.Atoi(parts[1])
 		target := parts[0]
 
 		for i := 0; i < maxRetries; i++ {
 			conn, err := dialer.Dial("tcp", addr)
 			if err == nil {
-				// Set timeout for banner grabbing
 				conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 				buffer := make([]byte, 1024)
 				n, err := conn.Read(buffer)
-				if err != nil {
-					fmt.Printf("Error reading from %s:%d: %v\n", target, port, err)
-					banner = ""
-				}
-				if n > 0 {
+				if err == nil && n > 0 {
 					banner = strings.TrimSpace(string(buffer[:n]))
-					fmt.Printf(`Response from %s: %s\n`, addr, banner)
-				} else {
-					fmt.Printf(`NO response from %s, bytes read: %d\n`, addr, n)
 				}
 				conn.Close()
 
-				// Store successful scan result
 				mu.Lock()
 				*openPorts = append(*openPorts, PortScanResult{Target: target, Port: port, Status: "open", Banner: banner})
 				mu.Unlock()
 
-				fmt.Printf("\r[OPEN] %s:%d %s\n", target, port, banner)
+				fmt.Printf("\r%s %s:%d %s\n", green("[OPEN]"), target, port, banner)
 				success = true
 				break
 			}
-
-			// Apply exponential backoff before retrying
-			backoff := time.Duration(1<<i) * time.Second
-			time.Sleep(backoff)
+			time.Sleep(time.Duration(1<<i) * time.Second)
 		}
 
 		if !success {
-			fmt.Printf("\r[CLOSED] %s:%d\n", target, port)
+			fmt.Printf("\r%s %s:%d\n", red("[CLOSED]"), target, port)
 		}
 
-		// Update progress counter
+		// Update scanning progress
 		mu.Lock()
-		*scanned++
-		fmt.Printf("\rScanning port %d/%d...", *scanned, *totalPorts)
-		mu.Unlock()
+*scanned++
+fmt.Fprintf(os.Stdout, "\r%s Scanning port %d/%d...", cyan("[*]"), *scanned, *totalPorts)
+mu.Unlock()
 	}
 }
+
 
 func main() {
 	// Command-line flags for user input
@@ -172,11 +168,12 @@ if len(targetList) == 0 {
 
 	// Compute scan duration
 	duration := time.Since(startTime)
-	fmt.Println("\n=== Scan Summary ===")
-	fmt.Printf("Targets Scanned: %d\n", len(targetList))
-	fmt.Printf("Ports Scanned: %d\n", totalPorts)
-	fmt.Printf("Open Ports: %d\n", len(openPorts))
-	fmt.Printf("Scan Duration: %v\n", duration)
+	fmt.Println("\n\n=== Scan Summary ===")
+fmt.Printf("Targets Scanned: %d\n", len(targetList))
+fmt.Printf("Ports Scanned: %d\n", totalPorts)
+fmt.Printf("Open Ports Found: %d\n", len(openPorts))
+fmt.Printf("Total Duration: %v\n", duration)
+
 
 	// Output results in JSON format if requested
 	if *jsonOutput {
