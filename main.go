@@ -102,15 +102,28 @@ func main() {
 	flag.Parse()
 
 	// Determine target list based on user input
-	var targetList []string
-	if *targets != "" {
-		targetList = strings.Split(*targets, ",")
-	} else if *target != "" {
-		targetList = append(targetList, *target)
-	} else {
-		fmt.Println("Error: No target specified. Use -target or -targets flag.")
-		return
-	}
+	// Determine target list based on user input
+var targetList []string
+
+if *target != "" {
+    targetList = append(targetList, *target)
+}
+
+if *targets != "" {
+    additionalTargets := strings.Split(*targets, ",")
+    for _, t := range additionalTargets {
+        trimmed := strings.TrimSpace(t)
+        if trimmed != "" {
+            targetList = append(targetList, trimmed)
+        }
+    }
+}
+
+if len(targetList) == 0 {
+    fmt.Println("Error: No targets specified. Use -target or -targets flag.")
+    return
+}
+
 
 	// Parse specific ports (if provided)
 	portSet := make(map[int]bool)
