@@ -36,6 +36,7 @@ func main() {
 	target := flag.String("target", "scanme.nmap.org", "Target IP address or hostname")
 	startPort := flag.Int("start-port", 1, "Starting port range")
 	endPort := flag.Int("end-port", 1024, "Ending port range")
+	workers := flag.Int("workers", 100, "Number of concurrent workers")
 	flag.Parse()
 
 	var wg sync.WaitGroup
@@ -44,8 +45,7 @@ func main() {
 		Timeout: 5 * time.Second,
 	}
 
-	workers := 100
-	for i := 1; i <= workers; i++ {
+	for i := 1; i <= *workers; i++ {
 		wg.Add(1)
 		go worker(&wg, tasks, dialer)
 	}
